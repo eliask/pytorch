@@ -4,6 +4,8 @@
 #include <torch/csrc/jit/passes/fuse_linear.h>
 #include <torch/csrc/jit/passes/quantization_patterns.h>
 #include <torch/csrc/jit/passes/subgraph_rewrite.h>
+#include <torch/csrc/jit/passes/inliner.h>
+#include <torch/csrc/jit/passes/freeze_module.h>
 
 #include <torch/csrc/jit/ir/ir.h>
 #include <torch/csrc/jit/ir/irparser.h>
@@ -2396,6 +2398,18 @@ void FoldPrepackedWeightIntoModule(
 void DedupModuleUses(script::Module& module) {
   ModuleUseDeduper d(module);
   d.dedup();
+}
+
+script::Module Finalize(script::Module& module) {
+  SwapFunctionalLinearInModule(module);
+  auto graph = module.get_method("forward").graph();
+  Inline(*graph);
+  ReplicateDeQuant(graph);
+  SwapDeQuant(graph);
+  InsertPrepackUnpack(graph);
+  ConstantPropagation(graph);
+  QuantFusion(graph);
+  return freeze_module(module);
 }
 
 } // namespace jit
